@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:treemap/tree_map.dart';
+import 'package:treemap/trees.dart';
 
 import 'const.dart';
 
@@ -34,7 +35,7 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   List<Cell> children = List();
-  Map json = {};
+  DataPoint rootNode;
 
   @override
   void initState() {
@@ -44,48 +45,106 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void initializeTree() {
     List data = jsonDecode(galleryJson);
-    Map<String, dynamic> parsedData = Map();
-    data.forEach((memoryUsage) {
+
+    int debugChildrenNumberLimit = 10000000;
+    int debugChildrenNumberCount = 0;
+
+    DataPoint root = DataPoint(
+      name: 'Root',
+      size: 0,
+      dataType: DataType.Root,
+    );
+
+    // Doesn't work but generates mock data anyway.
+
+    for (dynamic memoryUsage in data) {
+      if (debugChildrenNumberCount >= debugChildrenNumberLimit) break;
+
       String library = memoryUsage['l'];
       String className = memoryUsage['c'];
       String method = memoryUsage['n'];
       int size = memoryUsage['s'];
-
+      root.addSize(size);
+      
       if (library != null && library != '') {
         String firstLevel = library.split('/')[0];
-        if (parsedData.containsKey(firstLevel)) {
-          parsedData[firstLevel]['size'] += size;
+        DataPoint libraryLevelChild = root.getChildWithName(firstLevel);
+        if (libraryLevelChild != null) {
+          libraryLevelChild.addSize(size);
+
+          // if (className != null && className != '') {
+          //   DataPoint classLevelChild =
+          //       libraryLevelChild.getChildWithName(className);
+
+          //   if (classLevelChild != null) {
+          //     classLevelChild.addSize(size);
+
+          //     if (method != null && method != '') {
+          //       classLevelChild.addChild(
+          //         DataPoint(
+          //           name: method,
+          //           size: size,
+          //           dataType: DataType.Method,
+          //         ),
+          //       );
+          //     }
+          //   } else {
+          //     libraryLevelChild.addChild(
+          //       DataPoint(
+          //         name: className,
+          //         size: size,
+          //         dataType: DataType.Class,
+          //       ),
+          //     );
+          //   }
+          // }
         } else {
-          parsedData[firstLevel] = Map<String, dynamic>();
-          parsedData[firstLevel]['size'] = size;
+          root.addChild(
+            DataPoint(
+              name: firstLevel,
+              size: size,
+              dataType: DataType.Library,
+            ),
+          );
+
+          debugChildrenNumberCount += 1;
         }
-
-        if (className != null && className != '') {
-          if (parsedData[firstLevel].containsKey(className)) {
-            parsedData[firstLevel][className]['size'] += size;
+      } else {
+        if (method.startsWith('[Stub]')) {
+          DataPoint libraryLevelChild = root.getChildWithName('Stub');
+          if (libraryLevelChild != null) {
+            libraryLevelChild.addSize(size);
           } else {
-            parsedData[firstLevel][className] = Map<String, dynamic>();
-            parsedData[firstLevel][className]['size'] = size;
-          }
+            root.addChild(
+              DataPoint(
+                name: 'Stub',
+                size: size,
+                dataType: DataType.Library,
+              ),
+            );
 
-          if (method != null && method != '') {
-            if (parsedData[firstLevel][className].containsKey(method)) {
-              parsedData[firstLevel][className][method]['size'] += size;
-            } else {
-              parsedData[firstLevel][className][method] =
-                  Map<String, dynamic>();
-              parsedData[firstLevel][className][method]['size'] = size;
-            }
+            debugChildrenNumberCount += 1;
+          }
+        } else if (method.startsWith('[unknown stub]')) {
+          DataPoint libraryLevelChild = root.getChildWithName('UnknownStub');
+          if (libraryLevelChild != null) {
+            libraryLevelChild.addSize(size);
+          } else {
+            root.addChild(
+              DataPoint(
+                name: 'UnknownStub',
+                size: size,
+                dataType: DataType.Library,
+              ),
+            );
+
+            debugChildrenNumberCount += 1;
           }
         }
       }
-    });
-
-    // JsonEncoder encoder = new JsonEncoder.withIndent('  ');
-    // String prettyprint = encoder.convert(parsedData);
-    // print(prettyprint);
-
-    json = parsedData;
+    }
+    // root.printTree();
+    rootNode = root;
   }
 
   @override
@@ -94,12 +153,57 @@ class _MyHomePageState extends State<MyHomePage> {
       appBar: AppBar(
         title: Text(widget.title),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(32.0),
-        child: json.isEmpty
-            ? Center(child: CircularProgressIndicator())
-            : TreeMap(json: json),
+      body: Container(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: rootNode == null
+              ? Center(child: CircularProgressIndicator())
+              : TreeMap(rootNode: rootNode),
+        ),
       ),
     );
+  }
+}
+
+enum DataType { Root, Library, Class, Method }
+
+class DataPoint extends TreeNode<DataPoint> {
+  DataPoint({
+    @required this.name,
+    @required this.size,
+    @required this.dataType,
+  });
+
+  final String name;
+  final DataType dataType;
+  int size;
+
+  void addSize(int size) {
+    this.size += size;
+  }
+
+  DataPoint getChildWithName(String name) {
+    return this.children.singleWhere(
+      (element) => element.name == name,
+      orElse: () {
+        return null;
+      },
+    );
+  }
+
+  void printTree() {
+    printTreeHelper(this, '');
+  }
+
+  void printTreeHelper(DataPoint root, String tabs) {
+    print(tabs + '$root');
+    root.children.forEach((child) {
+      printTreeHelper(child, tabs + '\t');
+    });
+  }
+
+  @override
+  String toString() {
+    return '{name: $name, size: $size, dataType: $dataType}\n';
   }
 }
