@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:treemap/data_reference.dart';
 import 'package:treemap/tree_map.dart';
-import 'package:treemap/trees.dart';
 
 import 'const.dart';
 
@@ -35,7 +35,7 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   List<Cell> children = List();
-  DataPoint rootNode;
+  DataReference rootNode;
 
   @override
   void initState() {
@@ -46,101 +46,87 @@ class _MyHomePageState extends State<MyHomePage> {
   void initializeTree() {
     List data = jsonDecode(galleryJson);
 
-    int debugChildrenNumberLimit = 10000000;
+    // Number of boxes at the library level we can see.
+    int debugChildrenNumberLimit = 100;
     int debugChildrenNumberCount = 0;
 
-    DataPoint root = DataPoint(
+    DataReference root = DataReference(
       name: 'Root',
       size: 0,
       dataType: DataType.Root,
     );
 
-    // Doesn't work but generates mock data anyway.
+    // Can optimize look up / retrieve time with a hashmap
 
     for (dynamic memoryUsage in data) {
       if (debugChildrenNumberCount >= debugChildrenNumberLimit) break;
 
-      String library = memoryUsage['l'];
+      String libraryName = memoryUsage['l'];
+      if (libraryName == null || libraryName == '') {
+        libraryName = 'Unnamed Library';
+      }
       String className = memoryUsage['c'];
-      String method = memoryUsage['n'];
+      if (className == null || className == '') {
+        className = 'Unnamed Class';
+      }
+      String methodName = memoryUsage['n'];
+      if (methodName == null || methodName == '') {
+        methodName = 'Unnamed Method';
+      }
       int size = memoryUsage['s'];
+      if (size == null) {
+        throw ("Size was null for $memoryUsage");
+      }
       root.addSize(size);
-      
-      if (library != null && library != '') {
-        String firstLevel = library.split('/')[0];
-        DataPoint libraryLevelChild = root.getChildWithName(firstLevel);
-        if (libraryLevelChild != null) {
-          libraryLevelChild.addSize(size);
 
-          // if (className != null && className != '') {
-          //   DataPoint classLevelChild =
-          //       libraryLevelChild.getChildWithName(className);
+      if (libraryName.startsWith('package:flutter/src/')) {
+        libraryName = 'flutter:' + libraryName.split('/').last.replaceAll('.dart', '');
+      }
+      // String firstLevel = libraryName.split('/')[0];
+      DataReference libraryLevelChild = root.getChildWithName(libraryName);
+      if (libraryLevelChild == null) {
+        root.addChild(
+          DataReference(
+            name: libraryName,
+            size: size,
+            dataType: DataType.Library,
+          ),
+        );
 
-          //   if (classLevelChild != null) {
-          //     classLevelChild.addSize(size);
-
-          //     if (method != null && method != '') {
-          //       classLevelChild.addChild(
-          //         DataPoint(
-          //           name: method,
-          //           size: size,
-          //           dataType: DataType.Method,
-          //         ),
-          //       );
-          //     }
-          //   } else {
-          //     libraryLevelChild.addChild(
-          //       DataPoint(
-          //         name: className,
-          //         size: size,
-          //         dataType: DataType.Class,
-          //       ),
-          //     );
-          //   }
-          // }
-        } else {
-          root.addChild(
-            DataPoint(
-              name: firstLevel,
-              size: size,
-              dataType: DataType.Library,
-            ),
-          );
-
-          debugChildrenNumberCount += 1;
-        }
+        debugChildrenNumberCount += 1;
+        libraryLevelChild = root.getChildWithName(libraryName);
       } else {
-        if (method.startsWith('[Stub]')) {
-          DataPoint libraryLevelChild = root.getChildWithName('Stub');
-          if (libraryLevelChild != null) {
-            libraryLevelChild.addSize(size);
-          } else {
-            root.addChild(
-              DataPoint(
-                name: 'Stub',
-                size: size,
-                dataType: DataType.Library,
-              ),
-            );
+        libraryLevelChild.addSize(size);
+      }
 
-            debugChildrenNumberCount += 1;
-          }
-        } else if (method.startsWith('[unknown stub]')) {
-          DataPoint libraryLevelChild = root.getChildWithName('UnknownStub');
-          if (libraryLevelChild != null) {
-            libraryLevelChild.addSize(size);
-          } else {
-            root.addChild(
-              DataPoint(
-                name: 'UnknownStub',
-                size: size,
-                dataType: DataType.Library,
-              ),
-            );
+      DataReference classLevelChild = libraryLevelChild.getChildWithName(className);
 
-            debugChildrenNumberCount += 1;
-          }
-        }
+      if (classLevelChild == null) {
+        libraryLevelChild.addChild(
+          DataReference(
+            name: className,
+            size: size,
+            dataType: DataType.Class,
+          ),
+        );
+        classLevelChild = libraryLevelChild.getChildWithName(className);
+      } else {
+        classLevelChild.addSize(size);
+      }
+
+      DataReference methodLevelChild = classLevelChild.getChildWithName(methodName);
+
+      if (methodLevelChild == null) {
+        classLevelChild.addChild(
+          DataReference(
+            name: methodName,
+            size: size,
+            dataType: DataType.Method,
+          ),
+        );
+        methodLevelChild = classLevelChild.getChildWithName(methodName);
+      } else {
+        methodLevelChild.addSize(size);
       }
     }
     // root.printTree();
@@ -155,55 +141,21 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       body: Container(
         child: Padding(
-          padding: const EdgeInsets.all(32.0),
+          padding: const EdgeInsets.all(16.0),
           child: rootNode == null
               ? Center(child: CircularProgressIndicator())
-              : TreeMap(rootNode: rootNode),
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    return TreeMap(
+                      rootNode: rootNode,
+                      levelsVisible: 2,
+                      width: constraints.maxWidth,
+                      height: constraints.maxHeight,
+                    );
+                  },
+                ),
         ),
       ),
     );
-  }
-}
-
-enum DataType { Root, Library, Class, Method }
-
-class DataPoint extends TreeNode<DataPoint> {
-  DataPoint({
-    @required this.name,
-    @required this.size,
-    @required this.dataType,
-  });
-
-  final String name;
-  final DataType dataType;
-  int size;
-
-  void addSize(int size) {
-    this.size += size;
-  }
-
-  DataPoint getChildWithName(String name) {
-    return this.children.singleWhere(
-      (element) => element.name == name,
-      orElse: () {
-        return null;
-      },
-    );
-  }
-
-  void printTree() {
-    printTreeHelper(this, '');
-  }
-
-  void printTreeHelper(DataPoint root, String tabs) {
-    print(tabs + '$root');
-    root.children.forEach((child) {
-      printTreeHelper(child, tabs + '\t');
-    });
-  }
-
-  @override
-  String toString() {
-    return '{name: $name, size: $size, dataType: $dataType}\n';
   }
 }

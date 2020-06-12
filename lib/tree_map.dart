@@ -1,13 +1,26 @@
-import 'dart:collection';
-
 import 'package:flutter/material.dart';
 import 'package:random_color/random_color.dart';
-import 'package:treemap/main.dart';
+import 'package:treemap/data_reference.dart';
 
 class TreeMap extends StatefulWidget {
-  const TreeMap({this.rootNode});
+  const TreeMap({this.rootNode, this.levelsVisible, this.width, this.height});
 
-  final DataPoint rootNode;
+  final DataReference rootNode;
+
+  // The depth of children visible from this treemap widget.
+  // For example, levelsVisible = 2
+  // ---------------
+  // |    l = 1    |
+  // |  ---------  |
+  // |  | l = 2 |  |
+  // |  |       |  |
+  // |  |       |  |
+  // |  ---------  |
+  // ---------------
+  final int levelsVisible;
+
+  final double width;
+  final double height;
 
   @override
   _TreeMapState createState() => _TreeMapState();
@@ -17,145 +30,16 @@ enum PivotType { pivotByMiddle, pivotBySize }
 
 class _TreeMapState extends State<TreeMap> {
   bool shouldBeRow = true;
-  PivotType pivotType = PivotType.pivotByMiddle;
+  PivotType pivotType = PivotType.pivotBySize;
+  static const double minWidthToDisplayText = 110.0;
 
   @override
   void initState() {
     super.initState();
   }
 
-  // Computes the total size of given list of data points.
-  int computeSize(List<Cell> cells, int start, int end) {
-    int sum = 0;
-    for (int i = start; i <= end; i++) {
-      sum += cells[i].size;
-    }
-    return sum;
-  }
-
-  int computePivot(List<Cell> cells) {
-    if (cells.isEmpty) return -1;
-    switch (pivotType) {
-      case PivotType.pivotByMiddle:
-        {
-          return (cells.length / 2).floor();
-        }
-      case PivotType.pivotBySize:
-        {
-          int pivotIndex = -1;
-          double maxSize = double.negativeInfinity;
-          for (int i = 0; i < cells.length; i++) {
-            if (cells[i].size > maxSize) {
-              maxSize = cells[i].size.toDouble();
-              pivotIndex = i;
-            }
-          }
-          return pivotIndex;
-        }
-    }
-    return -1;
-  }
-
-  Widget buildTreeMap(List<Cell> data) {
-    if (data == null || data.length == 0) {
-      return Container();
-    }
-    if (data.length == 1 || data.length == 2) {
-      return Flexible(child: Row(children: data));
-    }
-
-    int pivotIndex = computePivot(data);
-    // if (pivotIndex == -1) {
-    //   throw ('Error occurred while computing the pivot index.');
-    // }
-
-    Cell pivotCell = data[pivotIndex];
-    int pcSize = pivotCell.size;
-
-    // Contains all data points before the pivotIndex.
-    List<Cell> list1 = data.sublist(0, pivotIndex);
-    int list1Size = computeSize(list1, 0, list1.length - 1);
-
-    List<Cell> list2 = [];
-    int list2Size = 0;
-    List<Cell> list3 = [];
-    int list3Size = 0;
-
-    // The amount of data we have from pivot + 1 (exclusive)
-    // In another words, if we only put one data in l2, how many are left for l3?
-    // [L1, pivotIndex, data, |d|] d = 2
-    int l3MaxLength = data.length - pivotIndex - 1;
-    int bestIndex = 0;
-    // We need to be able to put at least 3 elements in l3 for this algorithm.
-    if (l3MaxLength >= 3) {
-      double bestAspectRatio = double.infinity;
-      // Iterate through different combinations of list2 and list3 to find
-      // the combination where the aspect ratio of pc is the lowest.
-      for (int i = pivotIndex + 1; i < data.length; i++) {
-        int list2Size = computeSize(data, pivotIndex + 1, i);
-        int list3Size = computeSize(data, i + 1, data.length - 1);
-
-        // Calculate the aspect ratio for the pivot cell.
-        double pcWidth =
-            (pcSize + list2Size) / (list1Size + pcSize + list2Size + list3Size);
-        double pcHeight = pcSize / (pcSize + list2Size);
-        double pcAspectRatio = pcWidth / pcHeight;
-
-        // Best aspect ratio that is the closest to 1.
-        if ((1 - pcAspectRatio).abs() < (1 - bestAspectRatio).abs()) {
-          bestAspectRatio = pcAspectRatio;
-          bestIndex = i;
-        }
-      }
-
-      // Split the rest of the data into list2 and list3
-      // [L1, pivotIndex, L2 |bestIndex| L3]
-      list2 = data.sublist(pivotIndex + 1, bestIndex + 1);
-      list2Size = computeSize(list2, 0, list2.length - 1);
-
-      list3 = data.sublist(bestIndex + 1);
-      list3Size = computeSize(list3, 0, list3.length - 1);
-    } else if (l3MaxLength > 0) {
-      // Put all data in l2 and none in l3.
-      list2 = data.sublist(pivotIndex + 1);
-      list2Size = computeSize(list2, 0, list2.length - 1);
-    }
-
-    // Need to check if horizontal/vertical rectangle and
-    // switch to Row/Column accordingly.
-    // Need to check if horizontal/vertical rectangle and
-    // switch to Row/Column accordingly.
-    Widget row = Row(
-      children: [
-        Flexible(
-          flex: list1Size,
-          child: Column(
-            children: [
-              buildTreeMap(list1),
-            ],
-          ),
-        ),
-        Flexible(
-          flex: pcSize + list2Size,
-          child: Column(
-            children: [pivotCell, buildTreeMap(list2)],
-          ),
-        ),
-        Flexible(
-          flex: list3Size,
-          child: Column(
-            children: [
-              buildTreeMap(list3),
-            ],
-          ),
-        ),
-      ],
-    );
-    return row;
-  }
-
-  // Computes the total size of given list of data points.
-  int computeSize2(List<DataPoint> children, int start, int end) {
+  // Computes the total size of a given list of data references.
+  int computeSize(List<DataReference> children, int start, int end) {
     int sum = 0;
     for (int i = start; i <= end; i++) {
       sum += children[i].size;
@@ -163,7 +47,7 @@ class _TreeMapState extends State<TreeMap> {
     return sum;
   }
 
-  int computePivot2(List<DataPoint> children) {
+  int computePivot2(List<DataReference> children) {
     switch (pivotType) {
       case PivotType.pivotByMiddle:
         {
@@ -185,14 +69,14 @@ class _TreeMapState extends State<TreeMap> {
     return -1;
   }
 
-  // Divided a given list of datapoints into four parts:
-  // L1, PD, L2, L3
+  // Divided a given list of data references into four parts:
+  // L1, P, L2, L3
 
-  // PD (pivot datapoint) is the datapoint chosen to be the pivot based on the pivot type.
+  // P (pivot) is the data references chosen to be the pivot based on the pivot type.
 
-  // L1 inclues all datapoints before the pivot datapoint.
+  // L1 inclues all data references before the pivot data reference.
 
-  // L2 and L3 combined include all datapoints after the pivot datapoinit.
+  // L2 and L3 combined include all data references after the pivot data references.
   // A combination of elements are put into L2 and L3 so that
   // the aspect ratio of PD is as low as it can be.
 
@@ -204,8 +88,8 @@ class _TreeMapState extends State<TreeMap> {
   // |      |  L2  |            |
   // |      |      |            |
   // ----------------------------
-  List<Cell> buildTreeMap2(
-    List<DataPoint> children,
+  List<Cell> buildTreeMap(
+    List<DataReference> children,
     double width,
     double height,
     double x,
@@ -213,27 +97,17 @@ class _TreeMapState extends State<TreeMap> {
   ) {
     bool isHorizontalRectangle = width > height;
 
-    int totalSize = computeSize2(children, 0, children.length - 1);
+    int totalSize = computeSize(children, 0, children.length - 1);
 
     if (children.isEmpty) {
-      return [
-        Cell(
-          x: 0,
-          y: 0,
-          width: 0,
-          height: 0,
-        )
-      ];
+      return [];
     }
-    // Make list of children ascennding in size.
+    // Make list of children descending in size.
     // children.shuffle();
-    children.sort((a,b)=>b.size.compareTo(a.size));
+    children.sort((a, b) => b.size.compareTo(a.size));
     if (children.length == 1 || children.length == 2) {
       List<Cell> positionedChildren = [];
       double offset = isHorizontalRectangle ? x : y;
-
-      RandomColor random = RandomColor();
-      Color color = random.randomMaterialColor();
 
       children.forEach((child) {
         double ratio = child.size / totalSize;
@@ -243,13 +117,11 @@ class _TreeMapState extends State<TreeMap> {
             y: isHorizontalRectangle ? y : offset,
             width: isHorizontalRectangle ? ratio * width : width,
             height: isHorizontalRectangle ? height : ratio * height,
-            text: child.name,
             onTap: () {
               print('${child.name} tapped!');
             },
             node: child,
-            size: child.size,
-            backgroundColor: color,
+            levelsVisible: widget.levelsVisible - 1,
           ),
         );
 
@@ -263,15 +135,15 @@ class _TreeMapState extends State<TreeMap> {
       throw ('Error occurred while computing the pivot index.');
     }
 
-    DataPoint pivotDatapoint = children[pivotIndex];
-    int pdSize = pivotDatapoint.size;
+    DataReference pivotDataReference = children[pivotIndex];
+    int pSize = pivotDataReference.size;
 
-    List<DataPoint> list1 = children.sublist(0, pivotIndex);
-    int list1Size = computeSize2(list1, 0, list1.length - 1);
+    List<DataReference> list1 = children.sublist(0, pivotIndex);
+    int list1Size = computeSize(list1, 0, list1.length - 1);
 
-    List<DataPoint> list2 = [];
+    List<DataReference> list2 = [];
     int list2Size = 0;
-    List<DataPoint> list3 = [];
+    List<DataReference> list3 = [];
     int list3Size = 0;
 
     // The amount of data we have from pivot + 1 (exclusive)
@@ -284,55 +156,55 @@ class _TreeMapState extends State<TreeMap> {
 
     // We need to be able to put at least 3 elements in l3 for this algorithm.
     if (l3MaxLength >= 3) {
-      double pdBestAspectRatio = double.infinity;
+      double pBestAspectRatio = double.infinity;
       // Iterate through different combinations of list2 and list3 to find
-      // the combination where the aspect ratio of pc is the lowest.
+      // the combination where the aspect ratio of pivot is the lowest.
       for (int i = pivotIndex + 1; i < children.length; i++) {
-        int list2Size = computeSize2(children, pivotIndex + 1, i);
-        int list3Size = computeSize2(children, i + 1, children.length - 1);
+        int list2Size = computeSize(children, pivotIndex + 1, i);
+        int list3Size = computeSize(children, i + 1, children.length - 1);
 
-        // Calculate the aspect ratio for the pivot datapoint.
-        double pdAndList2Ratio = (pdSize + list2Size) / totalSize;
-        double pdRatio = pdSize / (pdSize + list2Size);
+        // Calculate the aspect ratio for the pivot data references.
+        double pAndList2Ratio = (pSize + list2Size) / totalSize;
+        double pRatio = pSize / (pSize + list2Size);
 
-        double pdWidth =
-            isHorizontalRectangle ? pdAndList2Ratio * width : pdRatio * width;
+        double pWidth =
+            isHorizontalRectangle ? pAndList2Ratio * width : pRatio * width;
 
-        double pdHeight =
-            isHorizontalRectangle ? pdRatio * height : pdAndList2Ratio * height;
+        double pHeight =
+            isHorizontalRectangle ? pRatio * height : pAndList2Ratio * height;
 
-        double pdAspectRatio = pdWidth / pdHeight;
+        double pAspectRatio = pWidth / pHeight;
 
         // Best aspect ratio that is the closest to 1.
-        if ((1 - pdAspectRatio).abs() < (1 - pdBestAspectRatio).abs()) {
-          pdBestAspectRatio = pdAspectRatio;
+        if ((1 - pAspectRatio).abs() < (1 - pBestAspectRatio).abs()) {
+          pBestAspectRatio = pAspectRatio;
           bestIndex = i;
-          // Kept track so it can be used to construct the pivot cell.
-          pivotBestWidth = pdWidth;
-          pivotBestHeight = pdHeight;
+          // Kept track of width and height to construct the pivot cell.
+          pivotBestWidth = pWidth;
+          pivotBestHeight = pHeight;
         }
       }
-
       // Split the rest of the data into list2 and list3
-      // [L1, pivotIndex, L2 |bestIndex| L3]
+      // [L1, pivotIndex, [L2 bestIndex] L3]
       list2 = children.sublist(pivotIndex + 1, bestIndex + 1);
-      list2Size = computeSize2(list2, 0, list2.length - 1);
+      list2Size = computeSize(list2, 0, list2.length - 1);
 
       list3 = children.sublist(bestIndex + 1);
-      list3Size = computeSize2(list3, 0, list3.length - 1);
-    } else if (l3MaxLength > 0) {
+      list3Size = computeSize(list3, 0, list3.length - 1);
+    } else {
       // Put all data in l2 and none in l3.
       list2 = children.sublist(pivotIndex + 1);
-      list2Size = computeSize2(list2, 0, list2.length - 1);
+      list2Size = computeSize(list2, 0, list2.length - 1);
 
-      double pdAndList2Ratio = (pdSize + list2Size) / totalSize;
-      double pdRatio = pdSize / (pdSize + list2Size);
+      double pdAndList2Ratio = (pSize + list2Size) / totalSize;
+      double pdRatio = pSize / (pSize + list2Size);
       pivotBestWidth =
           isHorizontalRectangle ? pdAndList2Ratio * width : pdRatio * width;
       pivotBestHeight =
           isHorizontalRectangle ? pdRatio * height : pdAndList2Ratio * height;
     }
 
+    // If true, the treemap will only show the divison between L1, L2, P, and L3.
     bool stopRecursion = false;
 
     double list1SizeRatio = list1Size / totalSize;
@@ -341,7 +213,7 @@ class _TreeMapState extends State<TreeMap> {
         isHorizontalRectangle ? height : height * list1SizeRatio;
     List<Cell> list1Cells;
     if (!stopRecursion)
-      list1Cells = buildTreeMap2(
+      list1Cells = buildTreeMap(
         list1,
         list1Width,
         list1Height,
@@ -349,10 +221,8 @@ class _TreeMapState extends State<TreeMap> {
         y,
       );
 
-    // list2 shares the same width as the pivot.
     double list2Width =
         isHorizontalRectangle ? pivotBestWidth : width - pivotBestWidth;
-    // list2's height is total height - pivot height.
     double list2Height =
         isHorizontalRectangle ? height - pivotBestHeight : pivotBestHeight;
     double list2XCoord = isHorizontalRectangle ? x + list1Width : x;
@@ -360,16 +230,13 @@ class _TreeMapState extends State<TreeMap> {
         isHorizontalRectangle ? y + pivotBestHeight : y + list1Height;
     List<Cell> list2Cells;
     if (!stopRecursion)
-      list2Cells = buildTreeMap2(
+      list2Cells = buildTreeMap(
         list2,
         list2Width,
         list2Height,
         list2XCoord,
         list2YCoord,
       );
-
-    RandomColor random = RandomColor();
-    Color color = random.randomMaterialColor();
 
     double pivotXCoord =
         isHorizontalRectangle ? x + list1Width : x + list2Width;
@@ -379,12 +246,11 @@ class _TreeMapState extends State<TreeMap> {
       height: pivotBestHeight,
       x: pivotXCoord,
       y: pivotYCorrd,
-      node: pivotDatapoint,
-      text: pivotDatapoint.name,
+      node: pivotDataReference,
       onTap: () {
-        print('${pivotDatapoint.name} tapped!');
+        print('${pivotDataReference.name} tapped!');
       },
-      backgroundColor: color,
+      levelsVisible: widget.levelsVisible - 1,
     );
 
     double list3Ratio = list3Size / totalSize;
@@ -396,13 +262,14 @@ class _TreeMapState extends State<TreeMap> {
         isHorizontalRectangle ? y : y + list1Height + pivotBestHeight;
     List<Cell> list3Cells;
     if (!stopRecursion)
-      list3Cells = buildTreeMap2(
+      list3Cells = buildTreeMap(
         list3,
         list3Width,
         list3Height,
         list3XCoord,
         list3YCoord,
       );
+      
     // print('--------- Pivot ----------');
     // print(pivotCell);
     // print('--------- List 1 ----------');
@@ -420,7 +287,8 @@ class _TreeMapState extends State<TreeMap> {
           height: list1Height,
           x: x,
           y: y,
-          text: 'List 1',
+          node: DataReference(name: 'List 1', size: null, dataType: null),
+          levelsVisible: 0,
         )
       ];
       list2Cells = [
@@ -429,7 +297,8 @@ class _TreeMapState extends State<TreeMap> {
           height: list2Height,
           x: list2XCoord,
           y: list2YCoord,
-          text: 'List 2',
+          node: DataReference(name: 'List 2', size: null, dataType: null),
+          levelsVisible: 0,
         )
       ];
       list3Cells = [
@@ -438,7 +307,8 @@ class _TreeMapState extends State<TreeMap> {
           height: list3Height,
           x: list3XCoord,
           y: list3YCoord,
-          text: 'List 3',
+          node: DataReference(name: 'List 3', size: null, dataType: null),
+          levelsVisible: 0,
         )
       ];
     }
@@ -446,56 +316,62 @@ class _TreeMapState extends State<TreeMap> {
     return list1Cells + [pivotCell] + list2Cells + list3Cells;
   }
 
-  List<Widget> buildTestTreeMapFromNode(
-      DataPoint root, double width, double height) {
-    List<DataPoint> children = root.children;
-    List<Cell> positionedChildren = [];
-    int totalSize = root.size;
-    double xOffset = 0;
-    children.forEach((child) {
-      double ratio = child.size / totalSize;
-
-      positionedChildren.add(
-        Cell(
-          x: xOffset,
-          y: 0.0,
-          width: ratio * width,
-          height: height,
-          text: child.name,
-          onTap: () {
-            print('${child.name} tapped!');
-          },
-          node: child,
-          size: child.size,
-        ),
-      );
-
-      xOffset += ratio * width;
-    });
-    return positionedChildren;
-  }
-
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Container(
-          width: constraints.maxWidth,
-          height: constraints.maxHeight,
-          decoration: BoxDecoration(
-            border: Border.all(),
-          ),
-          child: Stack(
-            children: buildTreeMap2(
-              widget.rootNode.children,
-              constraints.maxWidth,
-              constraints.maxHeight,
-              0.0,
-              0.0,
-            ),
-          ),
-        );
-      },
+    RandomColor random = RandomColor();
+    Color backgroundColor = random.randomMaterialColor();
+    return Padding(
+      padding: EdgeInsets.all(widget.levelsVisible > 0 ? 1.0 : 0.0),
+      child: Container(
+        decoration: BoxDecoration(border: Border.all(width: 0.5)),
+        child: Column(
+          children: [
+            if (widget.width > minWidthToDisplayText && widget.levelsVisible > 0)
+              Center(
+                child: Text(
+                  widget.rootNode.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12.0),
+                ),
+              ),
+            widget.levelsVisible == 0
+                ? Expanded(
+                    child: Tooltip(
+                      message: widget.rootNode.name,
+                      child: GestureDetector(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: backgroundColor,
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                : Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        return Container(
+                          width: constraints.maxWidth,
+                          height: constraints.maxHeight,
+                          decoration: BoxDecoration(
+                            border: Border.all(),
+                          ),
+                          child: Stack(
+                            children: buildTreeMap(
+                              widget.rootNode.children,
+                              constraints.maxWidth,
+                              constraints.maxHeight,
+                              0.0,
+                              0.0,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -507,11 +383,9 @@ class Cell extends StatelessWidget {
     @required this.height,
     @required this.x,
     @required this.y,
-    this.text = '',
+    @required this.levelsVisible,
     this.node,
     this.onTap,
-    this.size,
-    this.backgroundColor = Colors.transparent,
   }) : super(key: key);
 
   // Width and height of the box
@@ -524,14 +398,10 @@ class Cell extends StatelessWidget {
   final double x;
   final double y;
 
-  final String text;
   final VoidCallback onTap;
-  final DataPoint node;
-  // Should be deleted since size is in node already.
-  final int size;
+  final DataReference node;
 
-  // Color to paint the cell.
-  final Color backgroundColor;
+  final int levelsVisible;
 
   @override
   Widget build(BuildContext context) {
@@ -540,18 +410,11 @@ class Cell extends StatelessWidget {
       top: y,
       width: width,
       height: height,
-      child: Tooltip(
-        message: text,
-        child: GestureDetector(
-          onTap: onTap,
-          child: Container(
-            decoration: BoxDecoration(
-              color: backgroundColor,
-              border: Border.all(width: 0.5),
-            ),
-            child: Container(),
-          ),
-        ),
+      child: TreeMap(
+        rootNode: node,
+        levelsVisible: levelsVisible,
+        width: width,
+        height: height,
       ),
     );
   }
@@ -560,12 +423,11 @@ class Cell extends StatelessWidget {
   String toString({DiagnosticLevel minLevel = DiagnosticLevel.info}) {
     if (node == null) return 'null';
     return {
-      'name': text,
-      'node': node,
       'width': width,
       'height': height,
       'x': x,
       'y': y,
+      'node': node,
     }.toString();
   }
 }
