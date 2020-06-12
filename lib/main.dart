@@ -43,14 +43,39 @@ class _MyHomePageState extends State<MyHomePage> {
     initializeTree();
   }
 
+  int debugChildrenNumberCount = 0;
+
+  DataReference addChild(
+    DataReference parent,
+    String name,
+    int size,
+    DataType dataType,
+  ) {
+    DataReference child = parent.getChildWithName(name);
+    if (child == null) {
+      parent.addChild(
+        DataReference(
+          name: name,
+          size: size,
+          dataType: dataType,
+        ),
+      );
+
+      if (dataType == DataType.Library) debugChildrenNumberCount += 1;
+      child = parent.getChildWithName(name);
+    } else {
+      child.addSize(size);
+    }
+    return child;
+  }
+
   void initializeTree() {
-    List data = jsonDecode(galleryJson);
+    final List data = jsonDecode(galleryJson);
 
     // Number of boxes at the library level we can see.
-    int debugChildrenNumberLimit = 100;
-    int debugChildrenNumberCount = 0;
+    const int debugChildrenNumberLimit = 100;
 
-    DataReference root = DataReference(
+    final DataReference root = DataReference(
       name: 'Root',
       size: 0,
       dataType: DataType.Root,
@@ -73,63 +98,32 @@ class _MyHomePageState extends State<MyHomePage> {
       if (methodName == null || methodName == '') {
         methodName = 'Unnamed Method';
       }
-      int size = memoryUsage['s'];
+      final int size = memoryUsage['s'];
       if (size == null) {
-        throw ("Size was null for $memoryUsage");
+        throw 'Size was null for $memoryUsage';
       }
       root.addSize(size);
 
+      DataReference libraryLevelChild;
       if (libraryName.startsWith('package:flutter/src/')) {
-        libraryName = 'flutter:' + libraryName.split('/').last.replaceAll('.dart', '');
-      }
-      // String firstLevel = libraryName.split('/')[0];
-      DataReference libraryLevelChild = root.getChildWithName(libraryName);
-      if (libraryLevelChild == null) {
-        root.addChild(
-          DataReference(
-            name: libraryName,
-            size: size,
-            dataType: DataType.Library,
-          ),
-        );
-
-        debugChildrenNumberCount += 1;
-        libraryLevelChild = root.getChildWithName(libraryName);
+        final String package =
+            libraryName.replaceAll('package:flutter/src/', '');
+        final List<String> packageSplit = package.split('/');
+        libraryLevelChild =
+            addChild(root, 'package:flutter', size, DataType.Library);
+        for (String level in packageSplit) {
+          libraryLevelChild =
+              addChild(libraryLevelChild, level, size, DataType.Library);
+        }
       } else {
-        libraryLevelChild.addSize(size);
+        libraryName = libraryName.split('/')[0];
+        libraryLevelChild = addChild(root, libraryName, size, DataType.Library);
       }
-
-      DataReference classLevelChild = libraryLevelChild.getChildWithName(className);
-
-      if (classLevelChild == null) {
-        libraryLevelChild.addChild(
-          DataReference(
-            name: className,
-            size: size,
-            dataType: DataType.Class,
-          ),
-        );
-        classLevelChild = libraryLevelChild.getChildWithName(className);
-      } else {
-        classLevelChild.addSize(size);
-      }
-
-      DataReference methodLevelChild = classLevelChild.getChildWithName(methodName);
-
-      if (methodLevelChild == null) {
-        classLevelChild.addChild(
-          DataReference(
-            name: methodName,
-            size: size,
-            dataType: DataType.Method,
-          ),
-        );
-        methodLevelChild = classLevelChild.getChildWithName(methodName);
-      } else {
-        methodLevelChild.addSize(size);
-      }
+      final DataReference classLevelChild =
+          addChild(libraryLevelChild, className, size, DataType.Class);
+      final DataReference methodLevelChild =
+          addChild(classLevelChild, methodName, size, DataType.Method);
     }
-    // root.printTree();
     rootNode = root;
   }
 
